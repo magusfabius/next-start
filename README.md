@@ -18,3 +18,5 @@ Plus:
 
 
 Let's start with __npm install__ !
+
+Deployed with Vercel, it's online, [check it out](https://next-start-five.vercel.app/) !
