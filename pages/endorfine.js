@@ -1,129 +1,459 @@
+import React, { useEffect, useState } from "react";
+import { ethers } from "ethers";
+
 import Head from 'next/head'
-import Link from 'next/link'
 import Image from 'next/image'
 import Layout from '../components/layout/layout'
 
-import Swiper from '../components/swiper/swiper'
-
-// import { getOpensea } from '../lib/requests'
+import myEpicNft from '../utils/contracts/myEpicNft.json'
 
 
-/*
-{
-    primary_asset_contracts: [],
-    traits: {},
-    stats: [Object],
-    banner_image_url: null,
-    chat_url: null,
-    created_date: '2022-03-30T14:57:30.136517',
-    default_to_fiat: false,
-    description: null,
-    dev_buyer_fee_basis_points: '0',
-    dev_seller_fee_basis_points: '0',
-    discord_url: null,
-    display_data: [Object],
-    external_url: null,
-    featured: false,
-    featured_image_url: null,
-    hidden: true,
-    safelist_request_status: 'not_requested',
-    image_url: null,
-    is_subject_to_whitelist: false,
-    large_image_url: null,
-    medium_username: null,
-    name: 'nftcollector555 Collection',
-    only_proxied_transfers: false,
-    opensea_buyer_fee_basis_points: '0',
-    opensea_seller_fee_basis_points: '250',
-    payout_address: null,
-    require_email: false,
-    short_description: null,
-    slug: 'nftcollector555-collection',
-    telegram_url: null,
-    twitter_username: null,
-    instagram_username: null,
-    wiki_url: null,
-    is_nsfw: false
-  },
-*/
+// Constants
+const TWITTER_HANDLE = '_buildspace';
+const TWITTER_LINK = `https://twitter.com/${TWITTER_HANDLE}`;
+const OPENSEA_LINK = 'https://testnets.opensea.io/collection/squarenft-mdwu5xo1vp';
+const TOTAL_MINT_COUNT = 50;
+const CONTRACT_ADDRESS = "0x71a438d35D408D6eF1c69cfC24b565483db7dFaB"
 
-// todo: use SWR to fetch data (Client-Side)
-// todo: If you want to use GraphQL API or libs like Axios, you can create your own fetcher function. Check SWR website
-import useSWR from 'swr'
-
-// custom fetcher function to pass to useSWR
-const fetcher = async (url) => {
-  const res = await fetch(url);
-  console.log("custom fetcher res: ", res)
-  if (!res.ok) {
-    const error = new Error("An error occurred while fetching the data.");
-    // Attach extra info to the error object.
-    error.info = await res.json();
-    error.status = res.status;
-    throw error;
-  }
-
-  return res.json();
-};
-
-  
-function fetchData() {
-  const { data, error } = useSWR('https://api.opensea.io/api/v1/collections?offset=0&limit=300', fetcher)
-
-  return {
-    data: data,
-    isLoading: !error && !data,
-    isError: error
-  }
-}
-
-// function to show the fetched data
-function showData(){
-  const {data, isLoading, isError} = fetchData()
-
-  if (isLoading) return <p>Loading ...</p>
-  if (isError) return <p>Error: {isError}</p>
-
-  return ( 
-      
-      data.collections.map(collection => { 
-        return (
-          collection.image_url ? ( 
-            <div className="card" key={collection.slug + collection.name}>
-              <p>{collection.name}</p>
-              <Image src={ collection.image_url } height={400} width={250}></Image>
-            </div>
-          ) : <p> no image </p>
-        )
-  })
-    )
-}
 
 export default function Endorfine() {
+  const [currentAccount, setCurrentAccount] = useState("");
+  const [currentError, setCurrentError] = useState("");
+  const [totalMinted, setTotalMinted] = useState(null);
+  const [mintedNFT, setMintedNFT] = useState("");
+  const [loading, setLoading] = useState(false)
+
+  const checkIfWalletIsConnected = async () => {
+    /*
+    * Check if we're authorized to access the user's wallet, injected by Metamask
+    */
+   /* // it ask to connect metamask immediately
+    if (typeof window !== 'undefined' && window.ethereum) {
+      // check if user is connected to MetaMask
+      window.ethereum.enable().then(() => {
+        console.log('User is connected to MetaMask');
+      }).catch(() => {
+        console.log('User is not connected to MetaMask');
+        return
+      });
+    } else {
+      console.log("You don't have Metamask maybe? window.ethereum is not defined");
+      return
+    }
+    */
+    const { ethereum } = window;
+
+    if (!ethereum) {
+      console.log("Make sure you have metamask!");
+      return;
+    } else {
+      console.log("We have the ethereum object", ethereum);
+    }
+
+    /*
+    * Check if we're authorized to access the user's wallet
+    */
+    const accounts = await ethereum.request({ method: 'eth_accounts' });
+
+    /*
+    * User can have multiple authorized accounts, we grab the first one if its there!
+    */
+    if (accounts.length !== 0) {
+      const account = accounts[0];
+      console.log("Found an authorized account:", account);
+      setCurrentAccount(account);
+
+      // Setup listener! This is for the case where a user comes to our site
+      // and ALREADY had their wallet connected + authorized.
+      setupEventListener()
+    } else {
+      console.log("No authorized account found");
+    }
+  }
+
+  const connectWallet = async () => {
+    try {
+      const { ethereum } = window;
+
+      if (!ethereum) {
+        alert("Get MetaMask!");
+        return;
+      }
+
+      /*
+      * Fancy method to request access to account.
+      */
+      const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+
+      /*
+      * Boom! This should print out public address once we authorize Metamask.
+      */
+      console.log("Connected", accounts[0]);
+      setCurrentAccount(accounts[0]); 
+
+      // Setup listener! This is for the case where a user comes to our site
+      // and connected their wallet for the first time.
+      setupEventListener() 
+
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  // CONTRACT FUNCTIONS
+  // Setup our listener.
+  const setupEventListener = async () => {
+    // Most of this looks the same as our function askContractToMintNft
+    try {
+      const { ethereum } = window;
+
+      if (ethereum) {
+        // Same stuff again
+        const provider = new ethers.providers.Web3Provider(ethereum);
+        const signer = provider.getSigner();
+        const connectedContract = new ethers.Contract(CONTRACT_ADDRESS, myEpicNft.abi, signer);
+
+        // THIS IS THE MAGIC SAUCE.
+        // This will essentially "capture" our event when our contract throws it.
+        // If you're familiar with webhooks, it's very similar to that!
+        connectedContract.on("NewEpicNFTMinted", (from, tokenId) => {
+          console.log(from, tokenId.toNumber())
+          setMintedNFT(tokenId.toNumber())
+        });
+
+        console.log("Setup event listener!")
+
+      } else {
+        console.log("Ethereum object doesn't exist!");
+      }
+    } catch (error) {
+      console.log(error)
+      setCurrentError(error.msg)
+    }
+  }
+
+  // Minting function
+  const askContractToMintNft = async () => {
+    setLoading(true)
+
+    try {
+      const { ethereum } = window;
+
+      if (ethereum) {
+        const provider = new ethers.providers.Web3Provider(ethereum);
+        const signer = provider.getSigner();
+        const connectedContract = new ethers.Contract(CONTRACT_ADDRESS, myEpicNft.abi, signer);
+
+        console.log("Going to pop wallet now to pay gas...")
+        let nftTxn = await connectedContract.makeAnEpicNFT({value: ethers.utils.parseEther('0.025')});
+
+        console.log("Mining...please wait.")
+        await nftTxn.wait();
+        
+        console.log(`Mined, see transaction: https://rinkeby.etherscan.io/tx/${nftTxn.hash}`);
+
+        //update totalMinted
+        getTotalMinted()
+
+      } else {
+        console.log("Ethereum object doesn't exist!");
+      }
+
+    } catch (error) {
+      console.log(error)
+      setCurrentError(error.msg)
+    }
+
+    setLoading(false)
+  }
+
+  // Get the total number of NFTs minted
+  const getTotalMinted = async () => {
+    try {
+      const { ethereum } = window;
+
+      if (ethereum) {
+        const provider = new ethers.providers.Web3Provider(ethereum);
+        const signer = provider.getSigner();
+        const connectedContract = new ethers.Contract(CONTRACT_ADDRESS, myEpicNft.abi, signer);
+
+        const totalMinted = await connectedContract.getTotalNFTMintedSoFar();
+        console.log("Total minted:", totalMinted.toNumber());
+
+        setTotalMinted(totalMinted.toNumber());        
+      } else {
+        console.log("Ethereum object doesn't exist!");
+      }
+    } catch (error) {
+      console.log("getTotalMinted error:", error)
+      setCurrentError(error.msg)
+    }
+  }
+
+  // RENDER METHODS
+  const renderNotConnectedContainer = () => (
+    <button onClick={connectWallet} className="px-4 py-1 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 focus:outline-none focus:ring focus:ring-blue-300 rounded-xl text-white">
+      Connect to Wallet
+    </button>
+  );
+
+  const renderMintButton = () => {
+    if(totalMinted >= 50){
+      return <button className="sold-out-button"> SOLD OUT </button>
+    }else if(loading){
+      return <p style={{color: "white"}}>Loading ...</p>
+    }else{
+      return <button onClick={() => askContractToMintNft()} className="cta-button mint-button"> Mint NFT </button>
+    }
+  }
+
+  useEffect(() => {
+    checkIfWalletIsConnected();
+    getTotalMinted();
+  }, []);
+
   return (
-    <Layout>
+    <div className="App">
       <Head>
-        <title>Create Next App</title>
+        <title>Endorfine Labs</title>
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <main>
         <h1 className="title">
-          I think this is a nice thing.
+          Endorfine Labs
         </h1>
 
         <p className="description">
-            Would you buy it?
+            We cook the next NFT trend.
         </p>
 
-      
-       
-       { showData() }
+        
+          <div className="container">
+            <div className="header-container">
+              <p className="header gradient-text">My NFT Collection</p>
+              <p className="sub-text">
+                Mint your brand new NFT for 0.025 ETH ;)
+              </p>
+
+              <br></br>
+
+              { (totalMinted != null) ? (
+              <p className="sub-text">
+                {totalMinted} / { TOTAL_MINT_COUNT } 
+              </p>
+              ) : null }
+
+              <br></br>
+
+              {currentAccount ? 
+                (renderMintButton()) 
+                : 
+                (renderNotConnectedContainer())
+              }
+
+              <br></br>
+
+              <div className="grid">
+                { mintedNFT ? (<p className="sub-text"> Hey there! We've minted your NFT and sent it to your wallet. It may be blank right now. It can take a max of 10 min to show up on OpenSea. <a style={{color: "purple"}} target="_blank"  href={`https://testnets.opensea.io/assets/${CONTRACT_ADDRESS}/${mintedNFT}`}> CHECK IT OUT</a> </p>) : null }
+              </div>
+              
+            </div>
+
+           
+            { currentError ? 
+              (
+                <div className="error-container">
+                  {currentError}
+                </div>
+              )
+              : null 
+            }
+           
+
+          <div className="footer-container">
+            <a target="_blank" href={TWITTER_LINK}>
+              <Image
+                priority
+                src="/images/twitter-logo.svg"
+                height={100}
+                width={100}
+                alt="twitter logo"
+              />
+            </a>
+
+            <a target="_blank" href={OPENSEA_LINK}>
+              <Image
+                priority
+                src="/images/opensea-logo.svg"
+                height={70}
+                width={70}
+                alt="opensea logo"
+              />
+            </a>
+          </div>
+            
+          </div>
+        
+
       </main>
 
       <footer>
-       <p>This is the footer</p>
+       <p className="sub-text">TO THE MOON? NAH, TO MARS </p>
       </footer>
+
+      <style jsx global>{`
+      .App {
+        height: 100vh;
+        background-color: #0d1116;
+        overflow: scroll;
+        text-align: center;
+      }
+      
+      .container {
+        height: 100%;
+        background-color: #0d1116;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .error-container {
+        height: 100%;
+        background-color: red;
+        display: flex;
+        text-align: center;
+        text-transform: uppercase;
+        text-background: white;
+      }
+      
+      .header-container {
+        padding-top: 30px;
+      }
+      
+      .header {
+        margin: 0;
+        font-size: 50px;
+        font-weight: bold;
+      }
+
+      .title {
+        margin: 0;
+        line-height: 1.15;
+        font-size: 4rem;
+        color: white;
+      }
+
+      .description {
+          line-height: 1.5;
+          font-size: 1.5rem;
+          text-align: center;
+          color: white;
+        }
+      
+      .sub-text {
+        font-size: 25px;
+        color: white;
+      }
+      
+      .gradient-text {
+        background: -webkit-linear-gradient(left, #60c657 30%, #35aee2 60%);
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      
+      .cta-button {
+        height: 45px;
+        border: 0;
+        width: auto;
+        padding-left: 40px;
+        padding-right: 40px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        color: white;
+      }
+      
+      .connect-wallet-button {
+        background: -webkit-linear-gradient(left, #60c657, #35aee2);
+        background-size: 200% 200%;
+        animation: gradient-animation 4s ease infinite;
+      }
+      
+      .mint-button {
+        background: -webkit-linear-gradient(left, #e9e00a, #ff6fdf);
+        background-size: 200% 200%;
+        animation: gradient-animation 4s ease infinite;
+        margin-right: 15px;
+      }
+
+      .sold-out-button {
+        background: -webkit-linear-gradient(left, #ff6fdf, #e95e0a);
+        background-size: 200% 200%;
+        animation: gradient-animation 4s ease infinite;
+        margin-right: 15px;
+      }
+      
+      .opensea-button {
+        background-color: rgb(32, 129, 226);
+      }
+      
+      .mint-count {
+        color: white;
+        font-size: 18px;
+        font-weight: bold;
+      }
+      
+      .footer-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding-bottom: 30px;
+      }
+      
+      .footer-text {
+        color: white;
+        font-size: 16px;
+        font-weight: bold;
+      }
+      
+      /* KeyFrames */
+      @-webkit-keyframes gradient-animation {
+        0% {
+          background-position: 0% 50%;
+        }
+        50% {
+          background-position: 100% 50%;
+        }
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+      @-moz-keyframes gradient-animation {
+        0% {
+          background-position: 0% 50%;
+        }
+        50% {
+          background-position: 100% 50%;
+        }
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+      @keyframes gradient-animation {
+        0% {
+          background-position: 0% 50%;
+        }
+        50% {
+          background-position: 100% 50%;
+        }
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+      `}</style>
 
       <style jsx>{`
         .container {
@@ -153,47 +483,8 @@ export default function Endorfine() {
           align-items: center;
         }
 
-        footer img {
-          margin-left: 0.5rem;
-        }
-
-        footer a {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-        }
-
-        a {
-          color: inherit;
-          text-decoration: none;
-        }
-
-        .title a {
-          color: #0070f3;
-          text-decoration: none;
-        }
-
-        .title a:hover,
-        .title a:focus,
-        .title a:active {
-          text-decoration: underline;
-        }
-
-        .title {
-          margin: 0;
-          line-height: 1.15;
-          font-size: 4rem;
-        }
-
-        .title,
-        .description {
-          text-align: center;
-        }
-
-        .description {
-          line-height: 1.5;
-          font-size: 1.5rem;
-        }
+        
+   
 
         code {
           background: #fafafa;
@@ -256,7 +547,7 @@ export default function Endorfine() {
         }
       `}</style>
 
-      <style jsx global>{`
+      <style jsx>{`
         html,
         body {
           padding: 0;
@@ -270,6 +561,7 @@ export default function Endorfine() {
           box-sizing: border-box;
         }
       `}</style>
-    </Layout>
+
+    </div>
   )
 }

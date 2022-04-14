@@ -36,7 +36,13 @@ export default function Home() {
 
             <Link href={"/endorfine"}>
                 <button className="px-4 py-1 bg-purple-500 hover:bg-purple-600 active:bg-purple-700 focus:outline-none focus:ring focus:ring-purple-300 rounded-xl text-white">
-                    endorfine
+                    Endorfine Labs
+                </button>
+            </Link>
+
+            <Link href={"/opensea"}>
+                <button className="px-4 py-1 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 focus:outline-none focus:ring focus:ring-blue-300 rounded-xl text-white">
+                    OPENSEA
                 </button>
             </Link>
 
