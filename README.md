@@ -11,10 +11,18 @@ Plus:
 3. Developing a Tinder-like Swiper component using [Framer](https://www.framer.com/) (components/swiper/swiper.js)
 4. Check the /api/quotes to read my favourite quotes!
 
+
+
+
 🎯 Next steps:
-1. Web 3.0 implementation
+1. Web 3.0 implementation 
+    a. Connect to Wallet ✅
+    b. Mint
 2. Web 2.0 auth
 3. Test some databases with GraphQL
+4. 🏞 Frontend 
+
+
 
 
 Let's start with __npm install__ !
