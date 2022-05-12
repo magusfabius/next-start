@@ -21,6 +21,7 @@ Plus:
 2. Web 2.0 auth
 3. Test some databases with GraphQL
 4. 🏞 Frontend 
+    a. FAQ section done ✅
 
 
 
